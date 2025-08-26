@@ -1,0 +1,63 @@
+-----------------------
+Phase one 1
+
+
+Hostbuddy Webhook -> Slack Channel messages with button named "Resolved" -> Clicked removed from channel -> Post on a different channel who marked it resolved.
+
+
+This is how the webhook Looks like:
+
+ 
+{
+"action_items": 
+[
+{
+"user_id": 
+"castlehost99_gmail_com",
+"property_name": 
+"Paramount 3911 |A033_Aurora",
+"guest_name": 
+"Faisal null",
+"item": 
+"HostBuddy has stopped responding to this guest because their sentiment turned negative.",
+"category": 
+"OTHER",
+"created_at_utc": 
+"2025-08-25T05:59:27Z",
+"id": 
+"8060b15cda4c",
+"status": 
+"incomplete",
+"reservation_id": 
+"c17f36a2-9327-4bf6-87df-1317e0a4df0d",
+"conversation_id": 
+"c17f36a2-9327-4bf6-87df-1317e0a4df0d",
+"hospitable_reservation_id": 
+"c17f36a2-9327-4bf6-87df-1317e0a4df0d"
+}
+],
+"hook_id": 
+"5aa4c04e-d8e7-4a99-86d1-9a683e661a6e"
+}
+
+----
+Slack message needs to contain:
+
+- Property Name
+- Guest Name
+- Item Description
+- Category
+
+--------------------
+Remember that we need to account for array like action items and we need to post each item in a separate message. also with some delay between each message so slack doesn't block us for sending too many messages at once.
+
+--------------------------------------------
+Phase two 2
+Using the reservation_id we will fetch the conversation_id and add it to the slack message..
+
+
+
+--------------------
+
+Tech Stack:
+cloudflare worker
