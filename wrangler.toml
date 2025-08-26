@@ -1,11 +1,13 @@
-[observability]
-enabled = true
+
 name = "hostbuddy-slack-integration"
 main = "src/index.js"
 compatibility_date = "2023-12-01"
 
 [env.production]
 name = "hostbuddy-slack-integration"
+
+[observability]
+enabled = true
 
 [vars]
 SLACK_CHANNEL_ID = "C08UV1Z2T9B"
