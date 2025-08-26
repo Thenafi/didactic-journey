@@ -36,6 +36,7 @@ async function handleHostbuddyWebhook(request, env) {
 async function processActionItems(actionItems, env) {
   for (let i = 0; i < actionItems.length; i++) {
     const item = actionItems[i];
+    console.log("Processing action item:", item);
 
     try {
       await sendSlackMessage(item, env);
@@ -61,9 +62,12 @@ async function sendSlackMessage(actionItem, env) {
           type: "mrkdwn",
           text: `*🏠 Property:* ${
             actionItem.property_name || "N/A"
-          }\n*👤 Guest:* ${actionItem.guest_name || "N/A"}\n*📝 Description:* ${
-            actionItem.item || "N/A"
-          }\n*🏷️ Category:* ${actionItem.category || "N/A"}`,
+          }\n*👤 Guest:* ${
+            actionItem.guest_name || "N/A"
+          }\n*📝 Description:* ${(actionItem.item || "N/A").replace(
+            /\n/g,
+            " "
+          )}\n*🏷️ Category:* ${actionItem.category || "N/A"}`,
         },
       },
       {
@@ -92,6 +96,7 @@ async function sendSlackMessage(actionItem, env) {
     ],
   };
 
+  console.log("Sending Slack message:", message);
   const response = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: {
