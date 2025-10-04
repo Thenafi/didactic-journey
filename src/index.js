@@ -52,6 +52,18 @@ async function processActionItems(actionItems, env) {
 }
 
 async function sendSlackMessage(actionItem, env) {
+  // Check if this is an ARRIVAL-DEPARTURE item for property A044
+  const isArrivalDepartureA044 =
+    actionItem.category === "ARRIVAL-DEPARTURE" &&
+    actionItem.property_name &&
+    actionItem.property_name.includes("A044");
+
+  if (isArrivalDepartureA044) {
+    // Send to special channel without resolve button
+    await sendArrivalDepartureA044Message(actionItem, env);
+  }
+
+  // Send to regular channel with resolve button (for all items)
   const message = {
     channel: env.SLACK_CHANNEL_ID,
     text: `New action item for ${actionItem.guest_name || "N/A"}`,
@@ -109,6 +121,50 @@ async function sendSlackMessage(actionItem, env) {
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Slack API error: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+async function sendArrivalDepartureA044Message(actionItem, env) {
+  const message = {
+    channel: "C07U1GHS1R9",
+    text: `Hi <@U081UEASH37> <@U07UY3M1TF0> - New arrival/departure action item for ${
+      actionItem.guest_name || "N/A"
+    }`,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `Hi <@U081UEASH37> <@U07UY3M1TF0>\n\n*🏠 Property:* ${
+            actionItem.property_name || "N/A"
+          }\n*👤 Guest:* ${
+            actionItem.guest_name || "N/A"
+          }\n*📝 Description:* ${(actionItem.item || "N/A").replace(
+            /\n/g,
+            " "
+          )}\n*🏷️ Category:* ${actionItem.category || "N/A"}`,
+        },
+      },
+    ],
+  };
+
+  console.log("Sending ARRIVAL-DEPARTURE A044 Slack message:", message);
+  const response = await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(message),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(
+      `Error sending ARRIVAL-DEPARTURE A044 message: ${response.status} - ${errorText}`
+    );
   }
 
   return response.json();
