@@ -129,7 +129,7 @@ async function sendSlackMessage(actionItem, env) {
 async function sendArrivalDepartureA044Message(actionItem, env) {
   const message = {
     channel: "C07U1GHS1R9",
-    text: `Hi <@U081UEASH37> <@U07UY3M1TF0> - New arrival/departure action item for ${
+    text: `Hi <@U081UEASH37> <@U07UY3M1TF0> <@U08U4NPLXN0>  - New arrival/departure action item for ${
       actionItem.guest_name || "N/A"
     }`,
     blocks: [
