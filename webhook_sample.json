@@ -1,0 +1,38 @@
+[
+    {
+        "headers": {
+            "host": "n8n.apps.roverstack.com",
+            "x-real-ip": "34.34.229.33",
+            "x-forwarded-for": "34.34.229.33",
+            "x-forwarded-proto": "https",
+            "connection": "upgrade",
+            "content-length": "614",
+            "user-agent": "python-requests/2.32.3",
+            "accept-encoding": "gzip, deflate",
+            "accept": "*/*",
+            "content-type": "application/json"
+        },
+        "params": {},
+        "query": {},
+        "body": {
+            "action_items": [
+                {
+                    "user_id": "castlehost99_gmail_com",
+                    "property_name": "642 ThePark | A044_EA",
+                    "guest_name": "Jeklin Kim",
+                    "item": "The guest requested early check-in between 12 noon and 1 pm; team needs to check with cleaners and confirm availability.",
+                    "category": "GUEST REQUESTS",
+                    "created_at_utc": "2025-10-12T14:19:42Z",
+                    "id": "cd2eaeb8f1e8",
+                    "status": "incomplete",
+                    "reservation_id": "77adeb86-0029-48f0-b786-675313dbef33",
+                    "conversation_id": "77adeb86-0029-48f0-b786-675313dbef33",
+                    "hospitable_reservation_id": "77adeb86-0029-48f0-b786-675313dbef33"
+                }
+            ],
+            "hook_id": "75ddffb7-5270-42f0-b5f7-f32686e775a5"
+        },
+        "webhookUrl": "https://n8n.apps.roverstack.com/webhook/hostbuddy-ai",
+        "executionMode": "production"
+    }
+]

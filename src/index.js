@@ -39,7 +39,16 @@ async function processActionItems(actionItems, env) {
     console.log("Processing action item:", item);
 
     try {
-      await sendSlackMessage(item, env);
+      // Fetch reservation data if hospitable_reservation_id is available
+      let reservationData = null;
+      if (item.hospitable_reservation_id) {
+        reservationData = await fetchReservationData(
+          item.hospitable_reservation_id,
+          env
+        );
+      }
+
+      await sendSlackMessage(item, reservationData, env);
 
       // Add delay between messages to avoid rate limiting
       if (i < actionItems.length - 1) {
@@ -51,7 +60,31 @@ async function processActionItems(actionItems, env) {
   }
 }
 
-async function sendSlackMessage(actionItem, env) {
+async function fetchReservationData(reservationId, env) {
+  try {
+    const url = `https://public.api.hospitable.com/v2/reservations/${reservationId}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${env.HOSPITABLE_API_TOKEN}`,
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Error fetching reservation data: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.data;
+  } catch (error) {
+    console.error("Error fetching reservation data:", error);
+    return null;
+  }
+}
+
+async function sendSlackMessage(actionItem, reservationData, env) {
   // Check if this is an ARRIVAL-DEPARTURE item for property A044
   const isArrivalDepartureA044 =
     actionItem.category === "ARRIVAL-DEPARTURE" &&
@@ -60,7 +93,35 @@ async function sendSlackMessage(actionItem, env) {
 
   if (isArrivalDepartureA044) {
     // Send to special channel without resolve button
-    await sendArrivalDepartureA044Message(actionItem, env);
+    await sendArrivalDepartureA044Message(actionItem, reservationData, env);
+  }
+
+  // Format check-in and check-out dates as human-readable local time with offset, no conversion
+  function formatWithOffset(isoString) {
+    if (!isoString) return "N/A";
+    const d = new Date(isoString);
+    const match = isoString.match(/([+-]\d{2}:\d{2})$/);
+    const offset = match ? `UTC${match[1]}` : "";
+    return (
+      d.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }) + (offset ? ` (${offset})` : "")
+    );
+  }
+  let dateInfo = "";
+  let hospitableLink = "";
+  if (reservationData) {
+    const checkIn = formatWithOffset(reservationData.check_in);
+    const checkOut = formatWithOffset(reservationData.check_out);
+    dateInfo = `\n*:date: Stay:* ${checkIn} ---> ${checkOut}`;
+    if (reservationData.conversation_id) {
+      hospitableLink = `\n<https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}|View in Hospitable>`;
+    }
   }
 
   // Send to regular channel with resolve button (for all items)
@@ -76,10 +137,11 @@ async function sendSlackMessage(actionItem, env) {
             actionItem.property_name || "N/A"
           }\n*👤 Guest:* ${
             actionItem.guest_name || "N/A"
-          }\n*📝 Description:* ${(actionItem.item || "N/A").replace(
-            /\n/g,
-            " "
-          )}\n*🏷️ Category:* ${actionItem.category || "N/A"}`,
+          }${dateInfo}${hospitableLink}\n*📝 Description:* ${(
+            actionItem.item || "N/A"
+          ).replace(/\n/g, " ")}\n*🏷️ Category:* ${
+            actionItem.category || "N/A"
+          }`,
         },
       },
       {
@@ -126,7 +188,35 @@ async function sendSlackMessage(actionItem, env) {
   return response.json();
 }
 
-async function sendArrivalDepartureA044Message(actionItem, env) {
+async function sendArrivalDepartureA044Message(
+  actionItem,
+  reservationData,
+  env
+) {
+  // Format check-in and check-out dates as human-readable local time with offset, no conversion
+  function formatWithOffset(isoString) {
+    if (!isoString) return "N/A";
+    const d = new Date(isoString);
+    const match = isoString.match(/([+-]\d{2}:\d{2})$/);
+    const offset = match ? `UTC${match[1]}` : "";
+    return (
+      d.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }) + (offset ? ` (${offset})` : "")
+    );
+  }
+  let dateInfo = "";
+  if (reservationData) {
+    const checkIn = formatWithOffset(reservationData.check_in);
+    const checkOut = formatWithOffset(reservationData.check_out);
+    dateInfo = `\n*:date: Stay:* ${checkIn} ---> ${checkOut}`;
+  }
+
   const message = {
     channel: "C07U1GHS1R9",
     text: `Hi <@U081UEASH37> <@U07UY3M1TF0> <@U08U4NPLXN0>  - New arrival/departure action item for ${
@@ -141,7 +231,7 @@ async function sendArrivalDepartureA044Message(actionItem, env) {
             actionItem.property_name || "N/A"
           }\n*👤 Guest:* ${
             actionItem.guest_name || "N/A"
-          }\n*📝 Description:* ${(actionItem.item || "N/A").replace(
+          }${dateInfo}\n*📝 Description:* ${(actionItem.item || "N/A").replace(
             /\n/g,
             " "
           )}\n*🏷️ Category:* ${actionItem.category || "N/A"}`,
