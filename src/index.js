@@ -96,6 +96,21 @@ async function sendSlackMessage(actionItem, reservationData, env) {
     await sendArrivalDepartureA044Message(actionItem, reservationData, env);
   }
 
+  // Check if sentiment turned negative
+  const isSentimentNegative =
+    actionItem.item &&
+    actionItem.item.toLowerCase().includes("sentiment turned negative");
+
+  if (isSentimentNegative) {
+    if (reservationData && reservationData.check_out) {
+      // Schedule a reminder message at checkout time
+      await scheduleNegativeSentimentReminder(actionItem, reservationData, env);
+    } else {
+      // Failsafe: mention user if no reservation data
+      await sendNegativeSentimentFailsafe(actionItem, env);
+    }
+  }
+
   // Format check-in and check-out dates as human-readable local time with offset, no conversion
   function formatWithOffset(isoString) {
     if (!isoString) return "N/A";
@@ -137,11 +152,10 @@ async function sendSlackMessage(actionItem, reservationData, env) {
             actionItem.property_name || "N/A"
           }\n*👤 Guest:* ${
             actionItem.guest_name || "N/A"
-          }${dateInfo}${hospitableLink}\n*📝 Description:* ${(
-            actionItem.item || "N/A"
-          ).replace(/\n/g, " ")}\n*🏷️ Category:* ${
-            actionItem.category || "N/A"
-          }`,
+          }${dateInfo}\n*📝 Description:* ${(actionItem.item || "N/A").replace(
+            /\n/g,
+            " "
+          )}\n*🏷️ Category:* ${actionItem.category || "N/A"}${hospitableLink}`,
         },
       },
       {
@@ -211,10 +225,14 @@ async function sendArrivalDepartureA044Message(
     );
   }
   let dateInfo = "";
+  let hospitableLink = "";
   if (reservationData) {
     const checkIn = formatWithOffset(reservationData.check_in);
     const checkOut = formatWithOffset(reservationData.check_out);
     dateInfo = `\n*:date: Stay:* ${checkIn} ---> ${checkOut}`;
+    if (reservationData.conversation_id) {
+      hospitableLink = `\n<https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}|View in Hospitable>`;
+    }
   }
 
   const message = {
@@ -234,7 +252,7 @@ async function sendArrivalDepartureA044Message(
           }${dateInfo}\n*📝 Description:* ${(actionItem.item || "N/A").replace(
             /\n/g,
             " "
-          )}\n*🏷️ Category:* ${actionItem.category || "N/A"}`,
+          )}\n*🏷️ Category:* ${actionItem.category || "N/A"}${hospitableLink}`,
         },
       },
     ],
@@ -258,6 +276,130 @@ async function sendArrivalDepartureA044Message(
   }
 
   return response.json();
+}
+
+async function scheduleNegativeSentimentReminder(
+  actionItem,
+  reservationData,
+  env
+) {
+  try {
+    // Format dates for the message
+    function formatWithOffset(isoString) {
+      if (!isoString) return "N/A";
+      const d = new Date(isoString);
+      const match = isoString.match(/([+-]\d{2}:\d{2})$/);
+      const offset = match ? `UTC${match[1]}` : "";
+      return (
+        d.toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        }) + (offset ? ` (${offset})` : "")
+      );
+    }
+
+    const checkIn = formatWithOffset(reservationData.check_in);
+    const checkOut = formatWithOffset(reservationData.check_out);
+    const stayInfo = `${checkIn} ---> ${checkOut}`;
+
+    const hospitableLink = reservationData.conversation_id
+      ? `https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}`
+      : "N/A";
+
+    // Get checkout timestamp for scheduling + 30 minutes buffer
+    const checkoutDate = new Date(reservationData.check_out);
+    checkoutDate.setMinutes(checkoutDate.getMinutes() + 30);
+    const postAt = Math.floor(checkoutDate.getTime() / 1000);
+
+    const message = {
+      channel: "C04SDEC0UHZ",
+      text: `💥 Turn off reviewing the guest`,
+      post_at: postAt,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `💥 *Turn off reviewing the guest*\n\nThe automation that gives review to the guest. Turn that off. Not the message.\n\n*🏠 Property:* ${
+              actionItem.property_name || "N/A"
+            }\n*👤 Guest:* ${
+              actionItem.guest_name || "N/A"
+            }\n*:date: Stay:* ${stayInfo}\n\n<${hospitableLink}|View in Hospitable>`,
+          },
+        },
+      ],
+    };
+
+    console.log("Scheduling negative sentiment reminder:", message);
+    const response = await fetch("https://slack.com/api/chat.scheduleMessage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(message),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(
+        `Error scheduling message: ${response.status} - ${errorText}`
+      );
+    } else {
+      const result = await response.json();
+      console.log("Scheduled message result:", result);
+    }
+  } catch (error) {
+    console.error("Error scheduling negative sentiment reminder:", error);
+  }
+}
+
+async function sendNegativeSentimentFailsafe(actionItem, env) {
+  try {
+    const message = {
+      channel: "C04SDEC0UHZ",
+      text: `⚠️ Negative sentiment detected but reservation data unavailable`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `⚠️ <@U03S5GQ2CDP> *Negative sentiment detected but reservation data unavailable*\n\n*🏠 Property:* ${
+              actionItem.property_name || "N/A"
+            }\n*👤 Guest:* ${
+              actionItem.guest_name || "N/A"
+            }\n*📝 Description:* ${(actionItem.item || "N/A").replace(
+              /\n/g,
+              " "
+            )}\n\nCould not fetch reservation data from Hospitable API. Please manually check and schedule review reminder.`,
+          },
+        },
+      ],
+    };
+
+    console.log("Sending negative sentiment failsafe:", message);
+    const response = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(message),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(
+        `Error sending failsafe message: ${response.status} - ${errorText}`
+      );
+    }
+  } catch (error) {
+    console.error("Error sending negative sentiment failsafe:", error);
+  }
 }
 
 async function handleSlackInteraction(request, env, ctx) {
