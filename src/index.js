@@ -315,6 +315,40 @@ async function scheduleNegativeSentimentReminder(
     checkoutDate.setMinutes(checkoutDate.getMinutes() + 30);
     const postAt = Math.floor(checkoutDate.getTime() / 1000);
 
+    // Validate scheduling constraints
+    const now = Math.floor(Date.now() / 1000);
+    const maxFutureTime = now + 120 * 24 * 60 * 60; // 120 days in seconds
+
+    // Check if checkout date is in the past
+    if (postAt <= now) {
+      console.log(
+        "Checkout date is in the past, sending message immediately instead of scheduling"
+      );
+      await sendImmediateNegativeSentimentReminder(
+        actionItem,
+        reservationData,
+        stayInfo,
+        hospitableLink,
+        env
+      );
+      return;
+    }
+
+    // Check if checkout date is more than 120 days in the future
+    if (postAt > maxFutureTime) {
+      console.log(
+        "Checkout date is more than 120 days in the future, cannot schedule. Notifying via immediate message."
+      );
+      await sendSchedulingLimitExceeded(
+        actionItem,
+        reservationData,
+        stayInfo,
+        hospitableLink,
+        env
+      );
+      return;
+    }
+
     const message = {
       channel: "C04SDEC0UHZ",
       text: `💥 Turn off reviewing the guest`,
@@ -344,17 +378,137 @@ async function scheduleNegativeSentimentReminder(
       body: JSON.stringify(message),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
+    const result = await response.json();
+
+    if (!response.ok || !result.ok) {
+      const errorText = result.error || (await response.text());
       console.error(
         `Error scheduling message: ${response.status} - ${errorText}`
       );
+
+      // Handle specific Slack errors
+      if (result.error === "time_too_far" || result.error === "time_in_past") {
+        console.log(
+          "Slack scheduling error, sending immediate notification instead"
+        );
+        await sendImmediateNegativeSentimentReminder(
+          actionItem,
+          reservationData,
+          stayInfo,
+          hospitableLink,
+          env
+        );
+      } else if (result.error === "restricted_too_many") {
+        console.log("Rate limit exceeded for scheduled messages");
+        // Wait and retry or send immediate notification
+        await sendImmediateNegativeSentimentReminder(
+          actionItem,
+          reservationData,
+          stayInfo,
+          hospitableLink,
+          env
+        );
+      }
     } else {
-      const result = await response.json();
       console.log("Scheduled message result:", result);
     }
   } catch (error) {
     console.error("Error scheduling negative sentiment reminder:", error);
+  }
+}
+
+async function sendImmediateNegativeSentimentReminder(
+  actionItem,
+  reservationData,
+  stayInfo,
+  hospitableLink,
+  env
+) {
+  try {
+    const message = {
+      channel: "C04SDEC0UHZ",
+      text: `💥 Turn off reviewing the guest (IMMEDIATE)`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `💥 *Turn off reviewing the guest NOW*\n\n⚠️ Checkout has already passed or is imminent.\n\nThe automation that gives review to the guest. Turn that off. Not the message.\n\n*🏠 Property:* ${
+              actionItem.property_name || "N/A"
+            }\n*👤 Guest:* ${
+              actionItem.guest_name || "N/A"
+            }\n*:date: Stay:* ${stayInfo}\n\n<${hospitableLink}|View in Hospitable>`,
+          },
+        },
+      ],
+    };
+
+    const response = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(message),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(
+        `Error sending immediate reminder: ${response.status} - ${errorText}`
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Error sending immediate negative sentiment reminder:",
+      error
+    );
+  }
+}
+
+async function sendSchedulingLimitExceeded(
+  actionItem,
+  reservationData,
+  stayInfo,
+  hospitableLink,
+  env
+) {
+  try {
+    const message = {
+      channel: "C04SDEC0UHZ",
+      text: `⚠️ Cannot schedule reminder - checkout too far in future`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `⚠️ <@U03S5GQ2CDP> *Cannot schedule reminder - checkout is more than 120 days away*\n\n💥 Remember to turn off reviewing this guest closer to checkout.\n\nThe automation that gives review to the guest. Turn that off. Not the message.\n\n*🏠 Property:* ${
+              actionItem.property_name || "N/A"
+            }\n*👤 Guest:* ${
+              actionItem.guest_name || "N/A"
+            }\n*:date: Stay:* ${stayInfo}\n\n<${hospitableLink}|View in Hospitable>`,
+          },
+        },
+      ],
+    };
+
+    const response = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(message),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(
+        `Error sending limit exceeded message: ${response.status} - ${errorText}`
+      );
+    }
+  } catch (error) {
+    console.error("Error sending scheduling limit exceeded message:", error);
   }
 }
 
