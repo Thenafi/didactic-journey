@@ -310,10 +310,31 @@ async function scheduleNegativeSentimentReminder(
       ? `https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}`
       : "N/A";
 
-    // Get checkout timestamp for scheduling + 30 minutes buffer
+    // Only schedule for Airbnb platform
+    const platform = reservationData.platform
+      ? reservationData.platform.toLowerCase()
+      : "";
+    if (platform !== "airbnb") {
+      console.log(
+        `Platform is ${
+          reservationData.platform || "unknown"
+        }, not Airbnb. Skipping scheduled reminder.`
+      );
+      return;
+    }
+
+    // Get checkout timestamp for scheduling with random 6-8 hour buffer
     const checkoutDate = new Date(reservationData.check_out);
-    checkoutDate.setMinutes(checkoutDate.getMinutes() + 30);
+    // Generate random hours between 6 and 8 (360-480 minutes)
+    const randomMinutes = Math.floor(Math.random() * 121) + 360; // 360 + (0-120) = 360-480 minutes
+    checkoutDate.setMinutes(checkoutDate.getMinutes() + randomMinutes);
     const postAt = Math.floor(checkoutDate.getTime() / 1000);
+
+    console.log(
+      `Scheduling reminder ${Math.floor(randomMinutes / 60)} hours and ${
+        randomMinutes % 60
+      } minutes after checkout`
+    );
 
     // Validate scheduling constraints
     const now = Math.floor(Date.now() / 1000);
