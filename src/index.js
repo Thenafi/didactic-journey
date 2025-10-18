@@ -12,6 +12,11 @@ export default {
       return handleSlackInteraction(request, env, ctx);
     }
 
+    // Handle scheduled messages query
+    if (url.pathname === "/scheduled-messages" && request.method === "GET") {
+      return getScheduledMessages(env);
+    }
+
     // Default response
     return new Response("Hostbuddy Slack Integration Worker", { status: 200 });
   },
@@ -693,3 +698,76 @@ async function sendEphemeralConfirmation(channelId, user, env) {
     body: JSON.stringify(message),
   });
 }
+
+async function getScheduledMessages(env) {
+  try {
+    // Get list of scheduled messages
+    const response = await fetch("https://slack.com/api/chat.scheduledMessages.list", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        channel: "C04SDEC0UHZ" // The channel where negative sentiment reminders are scheduled
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return new Response(
+        JSON.stringify({ error: `Slack API error: ${response.status} - ${errorText}` }),
+        { 
+          status: response.status,
+          headers: { "Content-Type": "application/json" }
+        }
+      );
+    }
+
+    const data = await response.json();
+    
+    if (!data.ok) {
+      return new Response(
+        JSON.stringify({ error: data.error }),
+        { 
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        }
+      );
+    }
+
+    // Format the response
+    const scheduledMessages = data.scheduled_messages || [];
+    const formattedMessages = scheduledMessages.map(msg => ({
+      id: msg.id,
+      channel_id: msg.channel_id,
+      post_at: msg.post_at,
+      post_at_readable: new Date(msg.post_at * 1000).toISOString(),
+      text: msg.text,
+      date_created: msg.date_created,
+      date_created_readable: new Date(msg.date_created * 1000).toISOString(),
+    }));
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        count: formattedMessages.length,
+        scheduled_messages: formattedMessages
+      }, null, 2),
+      { 
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      }
+    );
+  } catch (error) {
+    console.error("Error fetching scheduled messages:", error);
+    return new Response(
+      JSON.stringify({ error: "Internal Server Error", details: error.message }),
+      { 
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      }
+    );
+  }
+}
+
