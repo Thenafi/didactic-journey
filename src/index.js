@@ -17,6 +17,11 @@ export default {
       return getScheduledMessages(env);
     }
 
+    // Handle test search route
+    if (url.pathname === "/test-search" && request.method === "GET") {
+      return testSlackSearch(env, request);
+    }
+
     // Default response
     return new Response("Hostbuddy Slack Integration Worker", { status: 200 });
   },
@@ -240,6 +245,19 @@ async function sendArrivalDepartureA044Message(
     }
   }
 
+  // Try to post in thread if check-in date is available
+  let threadTs = null;
+  if (reservationData && reservationData.check_in) {
+    try {
+      threadTs = await findOrCreateWeekThread(reservationData.check_in, env);
+    } catch (error) {
+      console.error(
+        "Error finding/creating thread, posting to main channel:",
+        error
+      );
+    }
+  }
+
   const message = {
     channel: "C07U1GHS1R9",
     text: `Hi <@U081UEASH37> <@U07UY3M1TF0> <@U08U4NPLXN0>  - New arrival/departure action item for ${
@@ -263,6 +281,11 @@ async function sendArrivalDepartureA044Message(
     ],
   };
 
+  // Add thread_ts if we have a thread
+  if (threadTs) {
+    message.thread_ts = threadTs;
+  }
+
   console.log("Sending ARRIVAL-DEPARTURE A044 Slack message:", message);
   const response = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
@@ -281,6 +304,157 @@ async function sendArrivalDepartureA044Message(
   }
 
   return response.json();
+}
+
+async function findOrCreateWeekThread(checkInISO, env) {
+  // Calculate the Saturday for this check-in date in LA timezone
+  const weekString = getWeekString(checkInISO);
+
+  console.log(`Looking for week thread: ${weekString}`);
+
+  // Search for existing thread with this week string
+  const searchUrl = new URL("https://slack.com/api/search.messages");
+  searchUrl.searchParams.append(
+    "query",
+    `in:#a044-eileena-aria "${weekString}"`
+  );
+  searchUrl.searchParams.append("count", "20");
+
+  const searchResponse = await fetch(searchUrl.toString(), {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${env.USER_OAUTH_TOKEN}`,
+    },
+  });
+
+  if (!searchResponse.ok) {
+    console.error("Search API error:", searchResponse.status);
+    throw new Error("Failed to search for existing thread");
+  }
+
+  const searchData = await searchResponse.json();
+
+  if (searchData.ok && searchData.messages?.matches) {
+    // Filter for parent messages only (not replies in threads)
+    const parentMessages = searchData.messages.matches.filter(
+      (msg) => !msg.thread_ts || msg.thread_ts === msg.ts
+    );
+
+    if (parentMessages.length > 0) {
+      // Found existing thread, use the first one
+      console.log(`Found existing thread: ${parentMessages[0].ts}`);
+      return parentMessages[0].ts;
+    }
+  }
+
+  // No thread found, create a new one
+  console.log(`Creating new thread for week: ${weekString}`);
+  return await createWeekThread(weekString, env);
+}
+
+function getWeekString(checkInISO) {
+  // Parse check-in date and convert to LA timezone
+  const checkInDate = new Date(checkInISO);
+
+  // Get LA timezone offset (PST is UTC-8, PDT is UTC-7)
+  // We'll use a simple approach: format the date in LA timezone
+  const laDateString = checkInDate.toLocaleString("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  });
+
+  // Parse the LA date to get year, month, day
+  const [weekday, dateStr, timeStr] = laDateString.split(", ");
+  const [month, day, year] = dateStr.split("/");
+
+  // Create a date object for LA timezone
+  const laDate = new Date(year, parseInt(month) - 1, parseInt(day));
+
+  // Calculate Saturday of that week (0 = Sunday, 6 = Saturday)
+  const dayOfWeek = laDate.getDay();
+  const daysUntilSaturday = (6 - dayOfWeek + 7) % 7; // Days until next Saturday
+  const daysSinceSaturday = (dayOfWeek + 1) % 7; // Days since last Saturday
+
+  // Get the Saturday on or before check-in date
+  const saturday = new Date(laDate);
+  if (dayOfWeek === 6) {
+    // It's Saturday, use this date
+  } else {
+    // Go back to previous Saturday
+    saturday.setDate(saturday.getDate() - daysSinceSaturday);
+  }
+
+  // Format as Week_Sat_16th_Nov_2025
+  const satDay = saturday.getDate();
+  const satMonth = saturday.toLocaleString("en-US", { month: "short" });
+  const satYear = saturday.getFullYear();
+
+  // Get ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
+  const ordinal = getOrdinalSuffix(satDay);
+
+  return `Week_Sat_${satDay}${ordinal}_${satMonth}_${satYear}`;
+}
+
+function getOrdinalSuffix(day) {
+  if (day > 3 && day < 21) return "th";
+  switch (day % 10) {
+    case 1:
+      return "st";
+    case 2:
+      return "nd";
+    case 3:
+      return "rd";
+    default:
+      return "th";
+  }
+}
+
+async function createWeekThread(weekString, env) {
+  const message = {
+    channel: "C07U1GHS1R9",
+    text: `📅 ${weekString}`,
+    blocks: [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: `📅 ${weekString}`,
+          emoji: true,
+        },
+      },
+    ],
+  };
+
+  console.log("Creating new week thread:", message);
+  const response = await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(message),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(
+      `Error creating week thread: ${response.status} - ${errorText}`
+    );
+    throw new Error("Failed to create week thread");
+  }
+
+  const result = await response.json();
+
+  if (!result.ok) {
+    console.error("Failed to create week thread:", result.error);
+    throw new Error("Failed to create week thread");
+  }
+
+  console.log(`Created new thread with ts: ${result.ts}`);
+  return result.ts;
 }
 
 async function scheduleNegativeSentimentReminder(
@@ -442,7 +616,6 @@ async function scheduleNegativeSentimentReminder(
     console.error("Error scheduling negative sentiment reminder:", error);
   }
 }
-
 async function sendImmediateNegativeSentimentReminder(
   actionItem,
   reservationData,
@@ -702,43 +875,45 @@ async function sendEphemeralConfirmation(channelId, user, env) {
 async function getScheduledMessages(env) {
   try {
     // Get list of scheduled messages
-    const response = await fetch("https://slack.com/api/chat.scheduledMessages.list", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        channel: "C04SDEC0UHZ" // The channel where negative sentiment reminders are scheduled
-      }),
-    });
+    const response = await fetch(
+      "https://slack.com/api/chat.scheduledMessages.list",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          channel: "C04SDEC0UHZ", // The channel where negative sentiment reminders are scheduled
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
       return new Response(
-        JSON.stringify({ error: `Slack API error: ${response.status} - ${errorText}` }),
-        { 
+        JSON.stringify({
+          error: `Slack API error: ${response.status} - ${errorText}`,
+        }),
+        {
           status: response.status,
-          headers: { "Content-Type": "application/json" }
+          headers: { "Content-Type": "application/json" },
         }
       );
     }
 
     const data = await response.json();
-    
+
     if (!data.ok) {
-      return new Response(
-        JSON.stringify({ error: data.error }),
-        { 
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        }
-      );
+      return new Response(JSON.stringify({ error: data.error }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     // Format the response
     const scheduledMessages = data.scheduled_messages || [];
-    const formattedMessages = scheduledMessages.map(msg => ({
+    const formattedMessages = scheduledMessages.map((msg) => ({
       id: msg.id,
       channel_id: msg.channel_id,
       post_at: msg.post_at,
@@ -749,25 +924,86 @@ async function getScheduledMessages(env) {
     }));
 
     return new Response(
-      JSON.stringify({
-        ok: true,
-        count: formattedMessages.length,
-        scheduled_messages: formattedMessages
-      }, null, 2),
-      { 
+      JSON.stringify(
+        {
+          ok: true,
+          count: formattedMessages.length,
+          scheduled_messages: formattedMessages,
+        },
+        null,
+        2
+      ),
+      {
         status: 200,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       }
     );
   } catch (error) {
     console.error("Error fetching scheduled messages:", error);
     return new Response(
-      JSON.stringify({ error: "Internal Server Error", details: error.message }),
-      { 
+      JSON.stringify({
+        error: "Internal Server Error",
+        details: error.message,
+      }),
+      {
         status: 500,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       }
     );
   }
 }
 
+async function testSlackSearch(env, request) {
+  try {
+    // Get query parameter from request URL, or use default
+    const requestUrl = new URL(request.url);
+    const searchQuery =
+      requestUrl.searchParams.get("q") ||
+      'in:#a044-eileena-aria "ARRIVAL-DEPARTURE"';
+
+    // Build query URL with parameters
+    const searchUrl = new URL("https://slack.com/api/search.messages");
+    searchUrl.searchParams.append("query", searchQuery);
+    searchUrl.searchParams.append("count", "10");
+
+    const searchResponse = await fetch(searchUrl.toString(), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${env.USER_OAUTH_TOKEN}`,
+      },
+    });
+
+    if (!searchResponse.ok) {
+      const errorText = await searchResponse.text();
+      return new Response(
+        JSON.stringify({
+          error: `Slack API error: ${searchResponse.status} - ${errorText}`,
+        }),
+        {
+          status: searchResponse.status,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const data = await searchResponse.json();
+
+    // Return raw response
+    return new Response(JSON.stringify(data, null, 2), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    console.error("Error testing Slack search:", error);
+    return new Response(
+      JSON.stringify({
+        error: "Internal Server Error",
+        details: error.message,
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+}
