@@ -7,6 +7,11 @@ export default {
       return handleHostbuddyWebhook(request, env);
     }
 
+    // Handle A008-specific webhook endpoint (only process negative-sentiment -> schedule reminder)
+    if (url.pathname === "/a008" && request.method === "POST") {
+      return handleA008Webhook(request, env);
+    }
+
     // Handle Slack interactive components (button clicks)
     if (url.pathname === "/slack/interactive" && request.method === "POST") {
       return handleSlackInteraction(request, env, ctx);
@@ -39,6 +44,69 @@ async function handleHostbuddyWebhook(request, env) {
     return new Response("OK", { status: 200 });
   } catch (error) {
     console.error("Error processing webhook:", error);
+    return new Response("Internal Server Error", { status: 500 });
+  }
+}
+
+// A008-specific webhook handler: only detect negative sentiment items and schedule reminders
+async function handleA008Webhook(request, env) {
+  try {
+    const payload = await request.json();
+
+    if (!payload.action_items || !Array.isArray(payload.action_items)) {
+      console.log("A008 webhook received with no action_items");
+      return new Response("OK", { status: 200 });
+    }
+
+    for (let i = 0; i < payload.action_items.length; i++) {
+      const item = payload.action_items[i];
+      try {
+        // Only act on items for property A008 (property_name contains "A008")
+        const isA008 =
+          item.property_name &&
+          item.property_name.toString().toUpperCase().includes("A008");
+
+        if (!isA008) {
+          continue;
+        }
+
+        // Detect negative sentiment phrasing
+        const isSentimentNegative =
+          item.item &&
+          item.item.toLowerCase().includes("sentiment turned negative");
+
+        if (!isSentimentNegative) {
+          continue;
+        }
+
+        // Fetch reservation data if available
+        let reservationData = null;
+        if (item.hospitable_reservation_id) {
+          reservationData = await fetchReservationData(
+            item.hospitable_reservation_id,
+            env
+          );
+        }
+
+        if (reservationData && reservationData.check_out) {
+          await scheduleNegativeSentimentReminder(item, reservationData, env);
+        } else {
+          // fallback: notify via failsafe
+          await sendNegativeSentimentFailsafe(item, env);
+        }
+
+        // small delay to avoid rate limits
+        if (i < payload.action_items.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      } catch (err) {
+        console.error("Error processing A008 action item:", err);
+      }
+    }
+
+    return new Response("OK", { status: 200 });
+  } catch (error) {
+    console.error("Error processing A008 webhook:", error);
     return new Response("Internal Server Error", { status: 500 });
   }
 }
