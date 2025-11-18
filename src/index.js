@@ -173,7 +173,14 @@ async function sendSlackMessage(actionItem, reservationData, env) {
     // Send to special channel without resolve button
     await sendArrivalDepartureA044Message(actionItem, reservationData, env);
   }
+  // Check for ADDRESS-REQUEST on A044 property
+  const isAddressRequestA044 =
+    actionItem.category === "ADDRESS-REQUEST" &&
+    actionItem.property_name?.toString().toLowerCase().includes("a044");
 
+  if (isAddressRequestA044) {
+    await sendAddressRequestAlert(env);
+  }
   // Check if sentiment turned negative
   const isSentimentNegative =
     actionItem.item &&
@@ -278,6 +285,31 @@ async function sendSlackMessage(actionItem, reservationData, env) {
   }
 
   return response.json();
+}
+
+async function sendAddressRequestAlert(env) {
+  const message = {
+    channel: "C04SDEC0UHZ", // #automation channel
+    text: "🚨 Please do not share the unit number before check-in",
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "🚨 *ALERT: Address Request for A044*\n\nPlease do not share the unit number before check-in.",
+        },
+      },
+    ],
+  };
+
+  await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(message),
+  });
 }
 
 async function sendArrivalDepartureA044Message(
