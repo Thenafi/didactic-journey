@@ -1019,6 +1019,8 @@ async function getScheduledMessages(env) {
       post_at: msg.post_at,
       post_at_readable: new Date(msg.post_at * 1000).toISOString(),
       text: msg.text,
+      blocks: msg.blocks,
+      attachments: msg.attachments,
       date_created: msg.date_created,
       date_created_readable: new Date(msg.date_created * 1000).toISOString(),
     }));
