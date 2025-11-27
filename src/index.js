@@ -70,10 +70,11 @@ async function handleA008Webhook(request, env) {
           continue;
         }
 
-        // Detect negative sentiment phrasing
+        // Detect negative sentiment phrasing or REVIEW category
         const isSentimentNegative =
-          item.item &&
-          item.item.toLowerCase().includes("sentiment turned negative");
+          (item.item &&
+            item.item.toLowerCase().includes("sentiment turned negative")) ||
+          (item.category && item.category.toUpperCase() === "REVIEW");
 
         if (!isSentimentNegative) {
           continue;
@@ -81,11 +82,11 @@ async function handleA008Webhook(request, env) {
 
         // Fetch reservation data if available
         let reservationData = null;
-        if (item.hospitable_reservation_id) {
-          reservationData = await fetchReservationData(
-            item.hospitable_reservation_id,
-            env
-          );
+        // Fetch reservation data if available (fallback to reservation_id)
+        const reservationId =
+          item.hospitable_reservation_id || item.reservation_id;
+        if (reservationId) {
+          reservationData = await fetchReservationData(reservationId, env);
         }
 
         if (reservationData && reservationData.check_out) {
@@ -119,11 +120,11 @@ async function processActionItems(actionItems, env) {
     try {
       // Fetch reservation data if hospitable_reservation_id is available
       let reservationData = null;
-      if (item.hospitable_reservation_id) {
-        reservationData = await fetchReservationData(
-          item.hospitable_reservation_id,
-          env
-        );
+      // Fetch reservation data if available (fallback to reservation_id)
+      const reservationId =
+        item.hospitable_reservation_id || item.reservation_id;
+      if (reservationId) {
+        reservationData = await fetchReservationData(reservationId, env);
       }
 
       await sendSlackMessage(item, reservationData, env);
@@ -181,10 +182,11 @@ async function sendSlackMessage(actionItem, reservationData, env) {
   if (isAddressRequestA044) {
     await sendAddressRequestAlert(env);
   }
-  // Check if sentiment turned negative
+  // Check if sentiment turned negative or category is REVIEW
   const isSentimentNegative =
-    actionItem.item &&
-    actionItem.item.toLowerCase().includes("sentiment turned negative");
+    (actionItem.item &&
+      actionItem.item.toLowerCase().includes("sentiment turned negative")) ||
+    (actionItem.category && actionItem.category.toUpperCase() === "REVIEW");
 
   if (isSentimentNegative) {
     if (reservationData && reservationData.check_out) {
