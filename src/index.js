@@ -32,6 +32,21 @@ export default {
   },
 };
 
+async function shortenUrl(url) {
+  try {
+    const response = await fetch(
+      `https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`
+    );
+    if (response.ok) {
+      return await response.text();
+    }
+    return url;
+  } catch (error) {
+    console.error("Error shortening URL:", error);
+    return url;
+  }
+}
+
 async function handleHostbuddyWebhook(request, env) {
   try {
     const payload = await request.json();
@@ -222,7 +237,9 @@ async function sendSlackMessage(actionItem, reservationData, env) {
     const checkOut = formatWithOffset(reservationData.check_out);
     dateInfo = `\n*:date: Stay:* ${checkIn} ---> ${checkOut}`;
     if (reservationData.conversation_id) {
-      hospitableLink = `\n<https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}|View in Hospitable>`;
+      const longUrl = `https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}`;
+      const shortUrl = await shortenUrl(longUrl);
+      hospitableLink = `\n<${shortUrl}|View in Hospitable>`;
     }
   }
 
@@ -343,7 +360,9 @@ async function sendArrivalDepartureA044Message(
     const checkOut = formatWithOffset(reservationData.check_out);
     dateInfo = `\n*:date: Stay:* ${checkIn} ---> ${checkOut}`;
     if (reservationData.conversation_id) {
-      hospitableLink = `\n<https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}|View in Hospitable>`;
+      const longUrl = `https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}`;
+      const shortUrl = await shortenUrl(longUrl);
+      hospitableLink = `\n<${shortUrl}|View in Hospitable>`;
     }
   }
 
@@ -588,7 +607,9 @@ async function scheduleNegativeSentimentReminder(
     const stayInfo = `${checkIn} ---> ${checkOut}`;
 
     const hospitableLink = reservationData.conversation_id
-      ? `https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}`
+      ? await shortenUrl(
+          `https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}`
+        )
       : "N/A";
 
     // Only schedule for Airbnb platform
@@ -738,7 +759,9 @@ async function sendImmediateNegativeSentimentReminder(
               actionItem.property_name || "N/A"
             }\n*👤 Guest:* ${
               actionItem.guest_name || "N/A"
-            }\n*:date: Stay:* ${stayInfo}\n\n<${hospitableLink}|View in Hospitable>`,
+            }\n*:date: Stay:* ${stayInfo}\n\n<${await shortenUrl(
+              hospitableLink
+            )}|View in Hospitable>`,
           },
         },
       ],
@@ -787,7 +810,9 @@ async function sendSchedulingLimitExceeded(
               actionItem.property_name || "N/A"
             }\n*👤 Guest:* ${
               actionItem.guest_name || "N/A"
-            }\n*:date: Stay:* ${stayInfo}\n\n<${hospitableLink}|View in Hospitable>`,
+            }\n*:date: Stay:* ${stayInfo}\n\n<${await shortenUrl(
+              hospitableLink
+            )}|View in Hospitable>`,
           },
         },
       ],
