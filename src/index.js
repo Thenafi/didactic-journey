@@ -197,6 +197,24 @@ async function sendSlackMessage(actionItem, reservationData, env) {
   if (isAddressRequestA044) {
     await sendAddressRequestAlert(env);
   }
+
+  // Check for EXTENSION-NIGHTLY-RATE on A044 property
+  const isExtensionNightlyRateA044 =
+    actionItem.category === "EXTENSION-NIGHTLY-RATE" &&
+    actionItem.property_name?.toString().toLowerCase().includes("a044");
+
+  if (isExtensionNightlyRateA044) {
+    await sendExtensionNightlyRateAlert(env);
+  }
+
+  // Check for MAINTENANCE on A066 property
+  const isMaintenanceA066 =
+    actionItem.category === "MAINTENANCE" &&
+    actionItem.property_name?.toString().toLowerCase().includes("a066");
+
+  if (isMaintenanceA066) {
+    await sendMaintenanceAlert(env);
+  }
   // Check if sentiment turned negative or category is REVIEW
   const isSentimentNegative =
     (actionItem.item &&
@@ -1135,4 +1153,54 @@ async function testSlackSearch(env, request) {
       }
     );
   }
+}
+
+async function sendExtensionNightlyRateAlert(env) {
+  const message = {
+    channel: "C04SDEC0UHZ", // #automation channel
+    text: "🚨 Team should use the same nightly rate the guest originally booked at, not the current rate shown on the calendar.",
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "🚨 *ALERT: EXTENSION-NIGHTLY-RATE for A044*\n\nTeam should use the same nightly rate the guest originally booked at, not the current rate shown on the calendar.",
+        },
+      },
+    ],
+  };
+
+  await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(message),
+  });
+}
+
+async function sendMaintenanceAlert(env) {
+  const message = {
+    channel: "C04SDEC0UHZ", // #automation channel
+    text: "🚨 ALERT: Maintenance for A066",
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "🚨 *ALERT: Maintenance for A066*\n\n1. Not every maintenance issue is fixed by the property manager. They are actually maintaining the property and its co-related stuff.\n2. Whenever we email a property manager about an issue, we must use the property’s full address (not its nickname) in both the email subject and body, as well as in any other form of communication",
+        },
+      },
+    ],
+  };
+
+  await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(message),
+  });
 }
