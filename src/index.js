@@ -253,7 +253,7 @@ async function sendSlackMessage(actionItem, reservationData, env) {
   if (reservationData) {
     const checkIn = formatWithOffset(reservationData.check_in);
     const checkOut = formatWithOffset(reservationData.check_out);
-    dateInfo = `\n*:date: Stay:* ${checkIn} ---> ${checkOut}`;
+    dateInfo = `\n*Stay:* ${checkIn} ---> ${checkOut}`;
     if (reservationData.conversation_id) {
       const longUrl = `https://my.hospitable.com/inbox/thread/${reservationData.conversation_id}`;
       const shortUrl = await shortenUrl(longUrl);
@@ -264,20 +264,23 @@ async function sendSlackMessage(actionItem, reservationData, env) {
   // Send to regular channel with resolve button (for all items)
   const message = {
     channel: env.SLACK_CHANNEL_ID,
-    text: `New action item for ${actionItem.guest_name || "N/A"}`,
+    text: `${actionItem.category || "N/A"}: ${(actionItem.item || "N/A").replace(
+      /\n/g,
+      " "
+    )}`,
     blocks: [
       {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*🏠 Property:* ${
+          text: `*Property:* ${
             actionItem.property_name || "N/A"
-          }\n*👤 Guest:* ${
+          }\n*Guest:* ${
             actionItem.guest_name || "N/A"
-          }${dateInfo}\n*📝 Description:* ${(actionItem.item || "N/A").replace(
+          }${dateInfo}\n\n*Description:* ${(actionItem.item || "N/A").replace(
             /\n/g,
             " "
-          )}\n*🏷️ Category:* ${actionItem.category || "N/A"}${hospitableLink}`,
+          )}\n\n*Category:* ${actionItem.category || "N/A"}${hospitableLink}`,
         },
       },
       {
