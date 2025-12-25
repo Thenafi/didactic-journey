@@ -402,7 +402,7 @@ async function sendArrivalDepartureA044Message(
 
   const message = {
     channel: "C07U1GHS1R9",
-    text: `Hi <@U081UEASH37> <@U07UY3M1TF0> <@U08U4NPLXN0>  - New arrival/departure action item for ${
+    text: `Hi <@U081UEASH37> <@U07UY3M1TF0>  - New arrival/departure action item for ${
       actionItem.guest_name || "N/A"
     }`,
     blocks: [
@@ -410,7 +410,7 @@ async function sendArrivalDepartureA044Message(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `Hi <@U081UEASH37> <@U07UY3M1TF0> <@U08U4NPLXN0>\n\n*🏠 Property:* ${
+          text: `Hi <@U081UEASH37> <@U07UY3M1TF0> \n\n*🏠 Property:* ${
             actionItem.property_name || "N/A"
           }\n*👤 Guest:* ${
             actionItem.guest_name || "N/A"
