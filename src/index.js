@@ -128,6 +128,9 @@ async function handleA008Webhook(request, env) {
 }
 
 async function processActionItems(actionItems, env) {
+  const allBlocks = [];
+  let summaryText = "";
+
   for (let i = 0; i < actionItems.length; i++) {
     const item = actionItems[i];
     console.log("Processing action item:", item);
@@ -142,15 +145,31 @@ async function processActionItems(actionItems, env) {
         reservationData = await fetchReservationData(reservationId, env);
       }
 
-      await sendSlackMessage(item, reservationData, env);
+      // Handle special side effects (alerts, specific property messages)
+      await handleSpecialActionItems(item, reservationData, env);
 
-      // Add delay between messages to avoid rate limiting
+      // Generate blocks for the main batched message
+      const itemBlocks = await generateActionItemBlocks(
+        item,
+        reservationData,
+        env
+      );
+      allBlocks.push(...itemBlocks);
+      // Add a divider between items if not the last one
       if (i < actionItems.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        allBlocks.push({ type: "divider" });
       }
+
+      // Accumulate text for notification preview
+      summaryText += `${item.category || "N/A"}: ${item.item || "N/A"} | `;
     } catch (error) {
       console.error(`Error processing action item ${item.id}:`, error);
     }
+  }
+
+  // Send the batched message if there are blocks
+  if (allBlocks.length > 0) {
+    await sendBatchedSlackMessage(allBlocks, summaryText, env);
   }
 }
 
@@ -178,7 +197,7 @@ async function fetchReservationData(reservationId, env) {
   }
 }
 
-async function sendSlackMessage(actionItem, reservationData, env) {
+async function handleSpecialActionItems(actionItem, reservationData, env) {
   // Check if this is an ARRIVAL-DEPARTURE item for property A044
   const isArrivalDepartureA044 =
     actionItem.category === "ARRIVAL-DEPARTURE" &&
@@ -230,7 +249,9 @@ async function sendSlackMessage(actionItem, reservationData, env) {
       await sendNegativeSentimentFailsafe(actionItem, env);
     }
   }
+}
 
+async function generateActionItemBlocks(actionItem, reservationData, env) {
   // Format check-in and check-out dates as human-readable local time with offset, no conversion
   function formatWithOffset(isoString) {
     if (!isoString) return "N/A";
@@ -261,55 +282,54 @@ async function sendSlackMessage(actionItem, reservationData, env) {
     }
   }
 
-  // Send to regular channel with resolve button (for all items)
+  return [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Property:* ${actionItem.property_name || "N/A"}\n*Guest:* ${
+          actionItem.guest_name || "N/A"
+        }${dateInfo}\n\n*Description:* ${(actionItem.item || "N/A").replace(
+          /\n/g,
+          " "
+        )}\n\n*Category:* ${actionItem.category || "N/A"}${hospitableLink}`,
+      },
+    },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "Resolved",
+            emoji: true,
+          },
+          style: "primary",
+          action_id: "resolve_action_item",
+          value: JSON.stringify({
+            item_id: actionItem.id,
+            property_name: actionItem.property_name,
+            guest_name: actionItem.guest_name,
+            reservation_id: actionItem.reservation_id,
+            item: actionItem.item,
+            category: actionItem.category,
+          }),
+        },
+      ],
+    },
+  ];
+}
+
+async function sendBatchedSlackMessage(blocks, summaryText, env) {
+  console.log("Sending batched Slack message with", blocks.length, "blocks");
+
   const message = {
     channel: env.SLACK_CHANNEL_ID,
-    text: `${actionItem.category || "N/A"}: ${(actionItem.item || "N/A").replace(
-      /\n/g,
-      " "
-    )}`,
-    blocks: [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Property:* ${
-            actionItem.property_name || "N/A"
-          }\n*Guest:* ${
-            actionItem.guest_name || "N/A"
-          }${dateInfo}\n\n*Description:* ${(actionItem.item || "N/A").replace(
-            /\n/g,
-            " "
-          )}\n\n*Category:* ${actionItem.category || "N/A"}${hospitableLink}`,
-        },
-      },
-      {
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "Resolved",
-              emoji: true,
-            },
-            style: "primary",
-            action_id: "resolve_action_item",
-            value: JSON.stringify({
-              item_id: actionItem.id,
-              property_name: actionItem.property_name,
-              guest_name: actionItem.guest_name,
-              reservation_id: actionItem.reservation_id,
-              item: actionItem.item,
-              category: actionItem.category,
-            }),
-          },
-        ],
-      },
-    ],
+    text: `New Action Items: ${summaryText.substring(0, 200)}...`, // Fallback text
+    blocks: blocks,
   };
 
-  console.log("Sending Slack message:", message);
   const response = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: {
@@ -917,12 +937,31 @@ async function handleSlackInteraction(request, env, ctx) {
       const user = payload.user;
       const channelId = payload.channel.id;
       const messageTs = payload.message.ts;
+      const originalBlocks = payload.message.blocks || [];
 
       // Respond to Slack immediately
       ctx.waitUntil(
         (async () => {
-          // Delete the original message
-          await deleteSlackMessage(channelId, messageTs, env);
+          // Find and remove the blocks for this specific action item
+          // Each action item has a section block followed by an actions block
+          // The actions block contains the button with the item_id in its value
+          const updatedBlocks = removeResolvedItemBlocks(
+            originalBlocks,
+            actionData.item_id
+          );
+
+          // Check if there are any remaining action item blocks (not just dividers)
+          const hasRemainingItems = updatedBlocks.some(
+            (block) => block.type === "section" || block.type === "actions"
+          );
+
+          if (hasRemainingItems) {
+            // Update the message with remaining items
+            await updateSlackMessage(channelId, messageTs, updatedBlocks, env);
+          } else {
+            // No more items, delete the message
+            await deleteSlackMessage(channelId, messageTs, env);
+          }
 
           // Post resolution message to the resolved channel
           await postResolutionMessage(actionData, user, env);
@@ -939,6 +978,85 @@ async function handleSlackInteraction(request, env, ctx) {
   } catch (error) {
     console.error("Error handling Slack interaction:", error);
     return new Response("Internal Server Error", { status: 500 });
+  }
+}
+
+function removeResolvedItemBlocks(blocks, itemId) {
+  const result = [];
+  let skipNext = false;
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+
+    if (skipNext) {
+      skipNext = false;
+      continue;
+    }
+
+    // Check if this is an actions block containing the resolved item's button
+    if (block.type === "actions" && block.elements) {
+      const hasResolvedButton = block.elements.some((el) => {
+        if (el.action_id === "resolve_action_item" && el.value) {
+          try {
+            const valueData = JSON.parse(el.value);
+            return valueData.item_id === itemId;
+          } catch {
+            return false;
+          }
+        }
+        return false;
+      });
+
+      if (hasResolvedButton) {
+        // Remove the preceding section block if it exists
+        if (result.length > 0 && result[result.length - 1].type === "section") {
+          result.pop();
+        }
+        // Also check if we need to remove a preceding divider
+        if (result.length > 0 && result[result.length - 1].type === "divider") {
+          result.pop();
+        }
+        // Skip this actions block
+        continue;
+      }
+    }
+
+    result.push(block);
+  }
+
+  // Clean up any trailing dividers
+  while (result.length > 0 && result[result.length - 1].type === "divider") {
+    result.pop();
+  }
+
+  // Clean up any leading dividers
+  while (result.length > 0 && result[0].type === "divider") {
+    result.shift();
+  }
+
+  return result;
+}
+
+async function updateSlackMessage(channel, timestamp, blocks, env) {
+  const response = await fetch("https://slack.com/api/chat.update", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      channel: channel,
+      ts: timestamp,
+      blocks: blocks,
+      text: "Action Items (updated)", // Fallback text
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(
+      `Error updating Slack message: ${response.status} - ${errorText}`
+    );
   }
 }
 
