@@ -235,10 +235,16 @@ async function handleSpecialActionItems(actionItem, reservationData, env) {
     await sendMaintenanceAlert(env);
   }
   // Check if sentiment turned negative or category is REVIEW
+  // Exclude property A044 from negative sentiment alerts
+  const isA044 =
+    actionItem.property_name &&
+    actionItem.property_name.toString().toUpperCase().includes("A044");
+
   const isSentimentNegative =
-    (actionItem.item &&
+    !isA044 &&
+    ((actionItem.item &&
       actionItem.item.toLowerCase().includes("sentiment turned negative")) ||
-    (actionItem.category && actionItem.category.toUpperCase() === "REVIEW");
+      (actionItem.category && actionItem.category.toUpperCase() === "REVIEW"));
 
   if (isSentimentNegative) {
     if (reservationData && reservationData.check_out) {
