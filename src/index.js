@@ -255,6 +255,15 @@ async function handleSpecialActionItems(actionItem, reservationData, env) {
       await sendNegativeSentimentFailsafe(actionItem, env);
     }
   }
+
+  // Check if category contains "Alert"
+  const isAlertCategory =
+    actionItem.category &&
+    actionItem.category.toString().toLowerCase().includes("alert");
+
+  if (isAlertCategory) {
+    await sendGeneralAlert(env);
+  }
 }
 
 async function generateActionItemBlocks(actionItem, reservationData, env) {
@@ -1317,6 +1326,49 @@ async function sendMaintenanceAlert(env) {
         text: {
           type: "mrkdwn",
           text: "🚨 *ALERT: Maintenance for A066*\n\n1. Not every maintenance issue is fixed by the property manager. They are actually maintaining the property and its co-related stuff.\n2. Whenever we email a property manager about an issue, we must use the property’s full address (not its nickname) in both the email subject and body, as well as in any other form of communication",
+        },
+      },
+    ],
+  };
+
+  await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(message),
+  });
+}
+
+function getRandomAnimalEmoji() {
+  const animals = [
+    "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮",
+    "🐷", "🐸", "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦", "🐤", "🐣",
+    "🐥", "🦆", "🦅", "🦉", "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🐛", "🦋",
+    "🐌", "🐞", "🐜", "🦗", "🕷", "🦂", "🐢", "🐍", "🦎", "🦖", "🦕", "🐙",
+    "🦑", "🦐", "🦞", "🦀", "🐡", "🐠", "🐟", "🐬", "🐳", "🐋", "🦈", "🐊",
+    "🐅", "🐆", "🦓", "🦍", "🦧", "🦣", "🐘", "🦛", "🦏", "🐪", "🐫", "🦒",
+    "🦘", "🐃", "🐂", "🐄", "🐎", "🐖", "🐏", "🐑", "🦙", "🐐", "🦌", "🐕",
+    "🐩", "🦮", "🐕‍🦺", "🐈", "🐈‍⬛", "🪶", "🐓", "🦃", "🦚", "🦜", "🦢", "🦩",
+    "🕊", "🐇", "🦝", "🦨", "🦡", "🦦", "🦥", "🐁", "🐀", "🐿", "🦔",
+  ];
+  return animals[Math.floor(Math.random() * animals.length)];
+}
+
+async function sendGeneralAlert(env) {
+  const emoji1 = getRandomAnimalEmoji();
+  const emoji2 = getRandomAnimalEmoji();
+
+  const message = {
+    channel: "C04SDEC0UHZ", // #automation channel
+    text: `${emoji1}${emoji2} There is an alert for action items. These action items are usually sent when the Castle Host team needs to do something specific or error-prone mistakes are made. So please read that first before taking action.\n\nSometimes they may trigger even though it is not reminder and Nafi will refine those over time`,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `${emoji1}${emoji2} There is an alert for action items. These action items are usually sent when the Castle Host team needs to do something specific or error-prone mistakes are made. So please read that first before taking action.\n\nSometimes they may trigger even though it is not reminder and Nafi will refine those over time`,
         },
       },
     ],

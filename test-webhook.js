@@ -8,7 +8,7 @@ const testPayload = {
       property_name: "642 ThePark | A044_EA",
       guest_name: "Jeklin Kim",
       item: "The guest requested early check-in between 12 noon and 1 pm; team needs to check with cleaners and confirm availability.",
-      category: "GUEST REQUESTS",
+      category: "⚠️ALERT",
       created_at_utc: "2025-10-12T14:19:42Z",
       id: "cd2eaeb8f1e8",
       status: "incomplete",
