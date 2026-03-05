@@ -1362,7 +1362,7 @@ async function sendGeneralAlert(env) {
 
   const message = {
     channel: "C04SDEC0UHZ", // #automation channel
-    text: `${emoji1}${emoji2} There is an alert for action items. These action items are usually sent when the Castle Host team needs to do something specific or error-prone mistakes are made. So please read that first before taking action.\n\nSometimes they may trigger even though it is not reminder and Nafi will refine those over time`,
+    text: `${emoji1}${emoji2} There is an alert, for action items in the Hostbuddy action item channel with the category "ALERT". These action items are usually sent when the Castle Host team needs to do something specific or error-prone mistakes are made. So please read that first before taking action.\n\nSometimes they may trigger even though it is not reminder and Nafi will refine those over time`,
     blocks: [
       {
         type: "section",
